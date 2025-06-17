@@ -1,0 +1,12 @@
+# configs/model/prompt_comtf.yaml
+name: PromptComBrainTF
+hidden_dim: 128
+num_heads: 4
+num_layers: 2
+prompt_len: 5
+meta_feature_dim: 3  # age, sex, IQ
+
+# Required for compatibility with logging or folder naming
+nhead: 4              # Matches num_heads
+num_MHSA: 1           # Number of transformer layers; just needs to exist
+pooling: [false, true]  # Dummy value; ComBrainTF uses it for naming/logging

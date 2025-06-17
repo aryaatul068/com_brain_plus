@@ -1,6 +1,6 @@
 defaults:
   - dataset: ABIDE
-  - model: combrain_tf_plus
+  - model: prompt_comtf
   - optimizer: adam
   - training: basic_training
   - datasz: 100p

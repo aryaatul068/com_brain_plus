@@ -57,21 +57,24 @@ class Train:
     def train_per_epoch(self, optimizer, lr_scheduler):
         self.model.train()
 
-        for time_series, node_feature, label in self.train_dataloader:
+        for time_series, node_feature, clinical_meta, label in self.train_dataloader:
             label = label.float()
             self.current_step += 1
 
             lr_scheduler.update(optimizer=optimizer, step=self.current_step)
 
-            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+            time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
 
             if self.config.preprocess.continus:
                 time_series, node_feature, label = continus_mixup_data(
                     time_series, node_feature, y=label)
 
             #predict, loss_pool = self.model(time_series, node_feature)
-            predict = self.model(node_feature)
-
+            if self.config.model.name == "PromptComBrainTF":
+                predict = self.model(time_series, node_feature, clinical_meta)
+            else:
+                predict = self.model(node_feature)
+        
             loss = self.loss_fn(predict, label)
 
             self.train_loss.update_with_weight(loss.item(), label.shape[0])
@@ -87,10 +90,13 @@ class Train:
 
         self.model.eval()
 
-        for time_series, node_feature, label in dataloader:
-            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+        for time_series, node_feature, clinical_meta, label in dataloader:
+            time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
             if self.config.model.name == "ComBrainTFPlus":
                 output = self.model(node_feature)
+                loss_pool = None
+            if self.config.model.name == "PromptComBrainTF":
+                output = self.model(time_series, node_feature, clinical_meta)
                 loss_pool = None
             else:
                 output, loss_pool = self.model(time_series, node_feature)
@@ -135,9 +141,14 @@ class Train:
             return t.detach().cpu().numpy() if isinstance(t, torch.Tensor) else None
 
         # ---------------- TRAIN ----------------
-        for time_series, node_feature, label in self.train_dataloader:
-            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
-            prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
+        for time_series, node_feature, clinical_meta, label in self.train_dataloader:
+            time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
+            if self.config.model.name == "ComBrainTFPlus":
+                prediction = self.model(time_series, node_feature)
+            elif self.config.model.name == "PromptComBrainTF":
+                prediction = self.model(time_series, node_feature, clinical_meta)
+            else:
+                prediction, _ = self.model(time_series, node_feature)
 
             assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
             attn = getattr(self.model, "get_attention_weights", lambda: None)()
@@ -154,9 +165,14 @@ class Train:
             labels.append(label.detach().cpu().numpy())
 
         # ---------------- VAL ----------------
-        for time_series, node_feature, label in self.val_dataloader:
-            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
-            prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
+        for time_series, node_feature, clinical_meta, label in self.val_dataloader:
+            time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
+            if self.config.model.name == "ComBrainTFPlus":
+                prediction = self.model(time_series, node_feature)
+            elif self.config.model.name == "PromptComBrainTF":
+                prediction = self.model(time_series, node_feature, clinical_meta)
+            else:
+                prediction, _ = self.model(time_series, node_feature)
 
             assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
             attn = getattr(self.model, "get_attention_weights", lambda: None)()
@@ -174,9 +190,14 @@ class Train:
 
         # ---------------- TEST (optional) ----------------
         if self.save_test_attn_weights:
-            for time_series, node_feature, label in self.test_dataloader:
-                time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
-                prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
+            for time_series, node_feature, clinical_meta, label in self.test_dataloader:
+                time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
+                if self.config.model.name == "ComBrainTFPlus":
+                    prediction = self.model(time_series, node_feature)
+                elif self.config.model.name == "PromptComBrainTF":
+                    prediction = self.model(time_series, node_feature, clinical_meta)
+                else:
+                    prediction, _ = self.model(time_series, node_feature)
 
                 assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
                 attn = getattr(self.model, "get_attention_weights", lambda: None)()
@@ -209,10 +230,10 @@ class Train:
 
         labels = []
 
-        for time_series, node_feature, label in self.test_dataloader:
+        for time_series, node_feature, clinical_meta, label in self.test_dataloader:
             label = label.long()
-            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
-            learable_matrix, _ = self.model(time_series, node_feature)
+            time_series, node_feature, clinical_meta, label = time_series.cpu(), node_feature.cpu(), clinical_meta.cpu(), label.cpu()
+            learable_matrix, _ = self.model(time_series, node_feature, clinical_meta)
 
             learable_matrixs.append(learable_matrix.cpu().detach().numpy())
             labels += label.tolist()

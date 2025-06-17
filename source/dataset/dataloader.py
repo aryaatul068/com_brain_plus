@@ -7,10 +7,12 @@ import numpy as np
 import torch.nn.functional as F
 
 
+# Add `clinical_features` parameter
 def init_dataloader(cfg: DictConfig,
-                    final_timeseires: torch.tensor,
-                    final_pearson: torch.tensor,
-                    labels: torch.tensor) -> List[utils.DataLoader]:
+                    final_timeseires: torch.Tensor,
+                    final_pearson: torch.Tensor,
+                    clinical_features: torch.Tensor,
+                    labels: torch.Tensor) -> List[utils.DataLoader]:
     labels = F.one_hot(labels.to(torch.int64))
     length = final_timeseires.shape[0]
     train_length = int(length*cfg.dataset.train_set*cfg.datasz.percentage)
@@ -29,6 +31,7 @@ def init_dataloader(cfg: DictConfig,
     dataset = utils.TensorDataset(
         final_timeseires[:train_length+val_length+test_length],
         final_pearson[:train_length+val_length+test_length],
+        clinical_features[:train_length+val_length+test_length],
         labels[:train_length+val_length+test_length]
     )
 
@@ -47,63 +50,65 @@ def init_dataloader(cfg: DictConfig,
 
 
 def init_stratified_dataloader(cfg: DictConfig,
-                               final_timeseires: torch.tensor,
-                               final_pearson: torch.tensor,
-                               labels: torch.tensor,
+                               final_timeseires: torch.Tensor,
+                               final_pearson: torch.Tensor,
+                               clinical_features: torch.Tensor,
+                               labels: torch.Tensor,
                                stratified: np.array) -> List[utils.DataLoader]:
+    
     labels = F.one_hot(labels.to(torch.int64))
     length = final_timeseires.shape[0]
-    train_length = int(length*cfg.dataset.train_set*cfg.datasz.percentage)
-    val_length = int(length*cfg.dataset.val_set)
+    train_length = int(length * cfg.dataset.train_set * cfg.datasz.percentage)
+    val_length = int(length * cfg.dataset.val_set)
+
     if cfg.datasz.percentage == 1.0:
-        test_length = length-train_length-val_length
+        test_length = length - train_length - val_length
     else:
-        test_length = int(length*(1-cfg.dataset.val_set-cfg.dataset.train_set))
+        test_length = int(length * (1 - cfg.dataset.val_set - cfg.dataset.train_set))
 
     with open_dict(cfg):
-        # total_steps, steps_per_epoch for lr schedular
-        cfg.steps_per_epoch = (
-            train_length - 1) // cfg.dataset.batch_size + 1
+        cfg.steps_per_epoch = (train_length - 1) // cfg.dataset.batch_size + 1
         cfg.total_steps = cfg.steps_per_epoch * cfg.training.epochs
 
-    split = StratifiedShuffleSplit(
-        n_splits=1, test_size=val_length+test_length, train_size=train_length, random_state=42)
+    split = StratifiedShuffleSplit(n_splits=1, test_size=val_length + test_length, train_size=train_length, random_state=42)
+    
     for train_index, test_valid_index in split.split(final_timeseires, stratified):
-        final_timeseires_train, final_pearson_train, labels_train = final_timeseires[
-            train_index], final_pearson[train_index], labels[train_index]
-        final_timeseires_val_test, final_pearson_val_test, labels_val_test = final_timeseires[
-            test_valid_index], final_pearson[test_valid_index], labels[test_valid_index]
+        final_timeseires_train = final_timeseires[train_index]
+        final_pearson_train = final_pearson[train_index]
+        clinical_features_train = clinical_features[train_index]
+        labels_train = labels[train_index]
+
+        final_timeseires_val_test = final_timeseires[test_valid_index]
+        final_pearson_val_test = final_pearson[test_valid_index]
+        clinical_features_val_test = clinical_features[test_valid_index]
+        labels_val_test = labels[test_valid_index]
+
         stratified = stratified[test_valid_index]
 
-    split2 = StratifiedShuffleSplit(
-        n_splits=1, test_size=test_length)
+    split2 = StratifiedShuffleSplit(n_splits=1, test_size=test_length)
     for test_index, valid_index in split2.split(final_timeseires_val_test, stratified):
-        final_timeseires_test, final_pearson_test, labels_test = final_timeseires_val_test[
-            test_index], final_pearson_val_test[test_index], labels_val_test[test_index]
-        final_timeseires_val, final_pearson_val, labels_val = final_timeseires_val_test[
-            valid_index], final_pearson_val_test[valid_index], labels_val_test[valid_index]
+        final_timeseires_test = final_timeseires_val_test[test_index]
+        final_pearson_test = final_pearson_val_test[test_index]
+        clinical_features_test = clinical_features_val_test[test_index]
+        labels_test = labels_val_test[test_index]
+
+        final_timeseires_val = final_timeseires_val_test[valid_index]
+        final_pearson_val = final_pearson_val_test[valid_index]
+        clinical_features_val = clinical_features_val_test[valid_index]
+        labels_val = labels_val_test[valid_index]
 
     train_dataset = utils.TensorDataset(
-        final_timeseires_train,
-        final_pearson_train,
-        labels_train
+        final_timeseires_train, final_pearson_train, clinical_features_train, labels_train
     )
-
     val_dataset = utils.TensorDataset(
-        final_timeseires_val, final_pearson_val, labels_val
+        final_timeseires_val, final_pearson_val, clinical_features_val, labels_val
     )
-
     test_dataset = utils.TensorDataset(
-        final_timeseires_test, final_pearson_test, labels_test
+        final_timeseires_test, final_pearson_test, clinical_features_test, labels_test
     )
 
-    train_dataloader = utils.DataLoader(
-        train_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=cfg.dataset.drop_last)
-
-    val_dataloader = utils.DataLoader(
-        val_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=False)
-
-    test_dataloader = utils.DataLoader(
-        test_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=False)
+    train_dataloader = utils.DataLoader(train_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=cfg.dataset.drop_last)
+    val_dataloader = utils.DataLoader(val_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=False)
+    test_dataloader = utils.DataLoader(test_dataset, batch_size=cfg.dataset.batch_size, shuffle=True, drop_last=False)
 
     return [train_dataloader, val_dataloader, test_dataloader]
