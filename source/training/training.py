@@ -63,13 +63,14 @@ class Train:
 
             lr_scheduler.update(optimizer=optimizer, step=self.current_step)
 
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
 
             if self.config.preprocess.continus:
                 time_series, node_feature, label = continus_mixup_data(
                     time_series, node_feature, y=label)
 
-            predict, loss_pool = self.model(time_series, node_feature)
+            #predict, loss_pool = self.model(time_series, node_feature)
+            predict = self.model(node_feature)
 
             loss = self.loss_fn(predict, label)
 
@@ -87,8 +88,12 @@ class Train:
         self.model.eval()
 
         for time_series, node_feature, label in dataloader:
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
-            output, loss_pool = self.model(time_series, node_feature)
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+            if self.config.model.name == "ComBrainTFPlus":
+                output = self.model(node_feature)
+                loss_pool = None
+            else:
+                output, loss_pool = self.model(time_series, node_feature)
 
             label = label.float()
 
@@ -115,77 +120,88 @@ class Train:
             if isfloat(k):
                 recall[int(float(k))] = report[k]['recall']
         return [auc] + list(metric) + recall
-
+    
     def save_attention_weights(self):
         attn_weights = []
         labels = []
         assign_matrices = []
-        attn_weights_local = []
+        attn_weights_test = []
+        labels_test = []
+        assign_matrices_test = []
+
         self.model.eval()
+
+        def safe_tensor_to_numpy(t):
+            return t.detach().cpu().numpy() if isinstance(t, torch.Tensor) else None
+
+        # ---------------- TRAIN ----------------
         for time_series, node_feature, label in self.train_dataloader:
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
-            prediction, _ = self.model(time_series, node_feature)
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+            prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
 
-            assignMat = self.model.get_assign_mat()
-            assign_np = assignMat.detach().cpu().numpy()
-            assign_matrices.append(assign_np)
+            assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
+            attn = getattr(self.model, "get_attention_weights", lambda: None)()
 
-            attn = self.model.get_attention_weights()
-            attn_np = attn[0].detach().cpu().numpy()
-            label_np = label.detach().cpu().numpy()
-            labels.append(label_np)
-            attn_weights.append(attn_np)
+            assign_np = safe_tensor_to_numpy(assignMat)
+            if assign_np is not None:
+                assign_matrices.append(assign_np)
 
+            if attn and isinstance(attn[0], torch.Tensor):
+                attn_np = safe_tensor_to_numpy(attn[0])
+                if attn_np is not None:
+                    attn_weights.append(attn_np)
 
+            labels.append(label.detach().cpu().numpy())
+
+        # ---------------- VAL ----------------
         for time_series, node_feature, label in self.val_dataloader:
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
-            prediction, _ = self.model(time_series, node_feature)
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+            prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
 
-            assignMat = self.model.get_assign_mat()
-            assign_np = assignMat.detach().cpu().numpy()
-            assign_matrices.append(assign_np)
+            assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
+            attn = getattr(self.model, "get_attention_weights", lambda: None)()
 
+            assign_np = safe_tensor_to_numpy(assignMat)
+            if assign_np is not None:
+                assign_matrices.append(assign_np)
 
-            attn = self.model.get_attention_weights()
-            attn_np = attn[0].detach().cpu().numpy()
-            label_np = label.detach().cpu().numpy()
-            labels.append(label_np)
-            attn_weights.append(attn_np)
+            if attn and isinstance(attn[0], torch.Tensor):
+                attn_np = safe_tensor_to_numpy(attn[0])
+                if attn_np is not None:
+                    attn_weights.append(attn_np)
+
+            labels.append(label.detach().cpu().numpy())
+
+        # ---------------- TEST (optional) ----------------
+        if self.save_test_attn_weights:
+            for time_series, node_feature, label in self.test_dataloader:
+                time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
+                prediction = self.model(node_feature) if self.config.model.name == "ComBrainTFPlus" else self.model(time_series, node_feature)[0]
+
+                assignMat = getattr(self.model, "get_assign_mat", lambda: None)()
+                attn = getattr(self.model, "get_attention_weights", lambda: None)()
+
+                assign_np = safe_tensor_to_numpy(assignMat)
+                if assign_np is not None:
+                    assign_matrices_test.append(assign_np)
+
+                if attn and isinstance(attn[0], torch.Tensor):
+                    attn_np = safe_tensor_to_numpy(attn[0])
+                    if attn_np is not None:
+                        attn_weights_test.append(attn_np)
+
+                labels_test.append(label.detach().cpu().numpy())
+
+        # ---------- Save ----------
+        self.save_path.mkdir(exist_ok=True, parents=True)
+        np.save(self.save_path / "attnWeights.npy", np.array(attn_weights, dtype=object), allow_pickle=True)
+        np.save(self.save_path / "labels.npy", np.array(labels, dtype=object), allow_pickle=True)
+        np.save(self.save_path / "assign_matrices.npy", np.array(assign_matrices, dtype=object), allow_pickle=True)
 
         if self.save_test_attn_weights:
-            attn_weights_test = []
-            labels_test = []
-            assign_matrices_test = []            
-
-        for time_series, node_feature, label in self.test_dataloader:
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
-            prediction, _ = self.model(time_series, node_feature)
-
-            assignMat = self.model.get_assign_mat()
-            assign_np = assignMat.detach().cpu().numpy()
-            assign_matrices.append(assign_np)
-
-
-            attn = self.model.get_attention_weights()
-            attn_np = attn[0].detach().cpu().numpy()
-            label_np = label.detach().cpu().numpy()
-            labels.append(label_np)
-            attn_weights.append(attn_np)
-
-            if self.save_test_attn_weights:
-                assign_matrices_test.append(assign_np)
-                labels_test.append(label_np)
-                attn_weights_test.append(attn_np)
-
-
-        np.save(self.save_path/f"attnWeights.npy", attn_weights, allow_pickle=True)
-        np.save(self.save_path/f"labels.npy", labels, allow_pickle=True)
-        np.save(self.save_path/f"assign_matrices.npy", assign_matrices, allow_pickle=True)
-
-        if self.save_test_attn_weights:
-            np.save(self.save_path/f"attnWeights_test.npy", attn_weights_test, allow_pickle=True)
-            np.save(self.save_path/f"labels_test.npy", labels_test, allow_pickle=True)
-            np.save(self.save_path/f"assign_matrices_test.npy", assign_matrices_test, allow_pickle=True)
+            np.save(self.save_path / "attnWeights_test.npy", np.array(attn_weights_test, dtype=object), allow_pickle=True)
+            np.save(self.save_path / "labels_test.npy", np.array(labels_test, dtype=object), allow_pickle=True)
+            np.save(self.save_path / "assign_matrices_test.npy", np.array(assign_matrices_test, dtype=object), allow_pickle=True)
 
     def generate_save_learnable_matrix(self):
 
@@ -195,7 +211,7 @@ class Train:
 
         for time_series, node_feature, label in self.test_dataloader:
             label = label.long()
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
             learable_matrix, _ = self.model(time_series, node_feature)
 
             learable_matrixs.append(learable_matrix.cpu().detach().numpy())

@@ -36,7 +36,7 @@ class FBNetTrain(Train):
 
             lr_scheduler.update(optimizer=optimizer, step=self.current_step)
 
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
 
             if self.config.preprocess.continus:
                 time_series, node_feature, label = continus_mixup_data(
@@ -76,7 +76,7 @@ class FBNetTrain(Train):
 
         for time_series, node_feature, label in dataloader:
             label = label.float()
-            time_series, node_feature, label = time_series.cuda(), node_feature.cuda(), label.cuda()
+            time_series, node_feature, label = time_series.cpu(), node_feature.cpu(), label.cpu()
             output, _ = self.model(time_series, node_feature)
 
             loss = self.loss_fn(output, label)

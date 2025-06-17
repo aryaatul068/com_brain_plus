@@ -43,14 +43,14 @@ class TransPoolingEncoder(nn.Module):
 
         if local_transformer:
             self.class_token = nn.ParameterList()
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
-            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cuda())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
+            self.class_token.append(nn.Parameter(torch.Tensor(1,input_feature_size), requires_grad = True).cpu())
         self.reset_parameters(local_transformer)
 
         self.mlp = nn.Sequential(
@@ -75,6 +75,9 @@ class TransPoolingEncoder(nn.Module):
             class_token = self.class_token[cluster_num]
             class_token = class_token.repeat(bz,1,1)
             x = torch.cat((class_token, x), dim=1)
+        print(f"x type: {type(x)}, shape: {x.shape if isinstance(x, torch.Tensor) else 'None'}")
+        if x is None:
+            raise ValueError("x is None before transformer")
         x = self.transformer(x)
         if self.local_transformer:
             cls_token = x[:, 0, :]
@@ -181,11 +184,15 @@ class ComBrainTF(BaseModel):
             self.node_clus_map = pickle.load(handle)
 
         self.node_rearranged_len = [41, 70, 91, 110, 130, 137, 158, 200]
-
+    
     def rearrange_node_feature(self, node_feature_rearranged, node_feature, rearranged_indices):
+        print("THis device is used",node_feature_rearranged.device)
         # Rearrange according to node_clus_map which is a dictionary {0:1, 1:3, .... 199:7}
+        print("Node feature shape:", node_feature_rearranged.shape)
+        print("First node_rearranged_len value:", self.node_rearranged_len[0])
         node_feature_rearranged = node_feature[:, rearranged_indices, :]
         node_feature_rearranged = node_feature_rearranged[:, :, rearranged_indices]
+
         return node_feature_rearranged
 
     def forward(self,
@@ -201,7 +208,7 @@ class ComBrainTF(BaseModel):
         assignments = []
         attn_weights = []
 
-        node_feature_rearranged = torch.tensor(node_feature.shape).cuda()
+        node_feature_rearranged = torch.tensor(node_feature.shape).cpu()
         node_feature_rearranged = self.rearrange_node_feature(node_feature_rearranged, node_feature, list(self.node_clus_map.keys()))
 
         node_feature_rearranged[:,:self.node_rearranged_len[0], :], _, local_class_tokens0  = self.local_transformer(node_feature_rearranged[:, :self.node_rearranged_len[0], :], cluster_num = 0)

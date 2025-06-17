@@ -197,8 +197,8 @@ class Embed2GraphByLinear(nn.Module):
             np.where(off_diag)[0]), dtype=np.float32)
         rel_send = np.array(encode_onehot(
             np.where(off_diag)[1]), dtype=np.float32)
-        self.rel_rec = torch.FloatTensor(rel_rec).cuda()
-        self.rel_send = torch.FloatTensor(rel_send).cuda()
+        self.rel_rec = torch.FloatTensor(rel_rec).cpu()
+        self.rel_send = torch.FloatTensor(rel_send).cpu()
 
     def forward(self, x):
 

@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Tuple
 from omegaconf import DictConfig
 
-
 def get_formatter() -> logging.Formatter:
     return logging.Formatter('[%(asctime)s][%(filename)s][L%(lineno)d][%(levelname)s] %(message)s')
 

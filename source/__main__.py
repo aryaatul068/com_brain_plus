@@ -1,3 +1,5 @@
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
 from datetime import datetime
 import wandb
 import hydra
@@ -7,11 +9,11 @@ from .models import model_factory
 from .components import lr_scheduler_factory, optimizers_factory, logger_factory
 from .training import training_factory
 from datetime import datetime
-import os
 import time
 import numpy as np
 import random
 import torch
+
 def get_timestamp():
     timestampTime = time.strftime("%H%M%S")
     timestampDate = time.strftime("%Y%m%d")

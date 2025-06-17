@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 
 def sample_gumbel(shape, eps=1e-20):
-    U = torch.rand(shape).cuda()
+    U = torch.rand(shape).cpu()
     return -torch.autograd.Variable(torch.log(-torch.log(U + eps) + eps))
 
 
@@ -28,7 +28,7 @@ def gumbel_softmax(logits, temperature, hard=False, eps=1e-10):
     if hard:
         shape = logits.size()
         _, k = y_soft.data.max(-1)
-        y_hard = torch.zeros(*shape).cuda()
+        y_hard = torch.zeros(*shape).cpu()
         y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0)
         y = torch.autograd.Variable(y_hard - y_soft.data) + y_soft
     else:

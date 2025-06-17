@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 
-def continus_mixup_data(*xs, y=None, alpha=1.0, device='cuda'):
+def continus_mixup_data(*xs, y=None, alpha=1.0, device='cpu'):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
@@ -15,7 +15,7 @@ def continus_mixup_data(*xs, y=None, alpha=1.0, device='cuda'):
     return *new_xs, y
 
 
-def mixup_data_by_class(x, nodes, y, alpha=1.0, device='cuda'):
+def mixup_data_by_class(x, nodes, y, alpha=1.0, device='cpu'):
     '''Returns mixed inputs, pairs of targets, and lambda'''
 
     mix_xs, mix_nodes, mix_ys = [], [], []
